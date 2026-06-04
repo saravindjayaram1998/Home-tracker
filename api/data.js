@@ -17,8 +17,8 @@ const APPROVED = (process.env.APPROVED_EMAILS || '')
   .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
 
 const DEFAULT_TASKS = [
-  {id:"k1", time:"Morning", cat:"Kitchen & Food", owner:"Shikha",  txt:"Buy daily grocery (online / market)", rec:{type:"daily"}, status:"active"},
-  {id:"k2", time:"Morning", cat:"Kitchen & Food", owner:"Shikha",  txt:"Plan bf, lunch, dinner & manage the cook", rec:{type:"daily"}, status:"active"},
+  {id:"k1", time:"Day", cat:"Kitchen & Food", owner:"Shikha",  txt:"Buy daily grocery (online / market)", rec:{type:"daily"}, status:"active"},
+  {id:"k2", time:"Day", cat:"Kitchen & Food", owner:"Shikha",  txt:"Plan bf, lunch, dinner & manage the cook", rec:{type:"daily"}, status:"active"},
   {id:"k3", time:"Morning", cat:"Kitchen & Food", owner:"Both",    txt:"Pack lunch (as possible for each other)", rec:{type:"daily"}, status:"active"},
   {id:"k4", time:"Night",   cat:"Kitchen & Food", owner:"Aravind", txt:"Clean kitchen at night & pack leftover food in fridge", rec:{type:"daily"}, status:"active"},
   {id:"k5", time:"Night",   cat:"Kitchen & Food", owner:"Aravind", txt:"Prepare sauf water every night", rec:{type:"daily"}, status:"active"},
