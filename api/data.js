@@ -9,6 +9,13 @@ const TASKS_KEY = 'tracker:tasks';
 const TICKS_KEY = 'tracker:ticks';
 const PEOPLE = ['Shikha', 'Aravind'];
 
+// Google login (optional). Set these as Vercel Environment Variables to switch login ON.
+// GOOGLE_CLIENT_ID  = your OAuth client id
+// APPROVED_EMAILS   = comma separated allowed gmails, e.g. "shikha@gmail.com,aravind@gmail.com"
+const CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const APPROVED = (process.env.APPROVED_EMAILS || '')
+  .toLowerCase().split(',').map(s => s.trim()).filter(Boolean);
+
 const DEFAULT_TASKS = [
   {id:"k1", time:"Morning", cat:"Kitchen & Food", owner:"Shikha",  txt:"Buy daily grocery (online / market)", rec:{type:"daily"}, status:"active"},
   {id:"k2", time:"Morning", cat:"Kitchen & Food", owner:"Shikha",  txt:"Plan bf, lunch, dinner & manage the cook", rec:{type:"daily"}, status:"active"},
@@ -34,8 +41,26 @@ const DEFAULT_TASKS = [
 
 function bothApproved(t){ const a = t.approvals || {}; return PEOPLE.every(p => a[p]); }
 
+// Verify Google login when CLIENT_ID is configured. If not configured, auth is OFF (open).
+async function authed(req){
+  if(!CLIENT_ID) return true;
+  const h = req.headers.authorization || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : '';
+  if(!token) return false;
+  try{
+    const r = await fetch('https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(token));
+    if(!r.ok) return false;
+    const info = await r.json();
+    if(info.aud !== CLIENT_ID) return false;
+    if(APPROVED.length && !APPROVED.includes((info.email || '').toLowerCase())) return false;
+    return true;
+  }catch(e){ return false; }
+}
+
 export default async function handler(req, res) {
   try {
+    if(!(await authed(req))) return res.status(401).json({ error: 'unauthorized' });
+
     if (req.method === 'GET') {
       let tasks = await redis.get(TASKS_KEY);
       if (!tasks) { tasks = DEFAULT_TASKS; await redis.set(TASKS_KEY, tasks); }
@@ -54,22 +79,12 @@ export default async function handler(req, res) {
 
       if (['addTask', 'removeTask', 'approve'].includes(body.type)) {
         let tasks = (await redis.get(TASKS_KEY)) || [];
-
-        if (body.type === 'addTask' && body.task) {
-          tasks.push(body.task);
-        }
-        if (body.type === 'removeTask' && body.id) {
-          tasks = tasks.filter(t => t.id !== body.id);
-        }
+        if (body.type === 'addTask' && body.task) tasks.push(body.task);
+        if (body.type === 'removeTask' && body.id) tasks = tasks.filter(t => t.id !== body.id);
         if (body.type === 'approve' && body.id && PEOPLE.includes(body.person)) {
           const t = tasks.find(x => x.id === body.id);
-          if (t) {
-            t.approvals = t.approvals || {};
-            t.approvals[body.person] = 1;
-            if (bothApproved(t)) t.status = 'active';
-          }
+          if (t) { t.approvals = t.approvals || {}; t.approvals[body.person] = 1; if (bothApproved(t)) t.status = 'active'; }
         }
-
         await redis.set(TASKS_KEY, tasks);
         return res.status(200).json({ ok: true, tasks });
       }
