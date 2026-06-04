@@ -75,7 +75,8 @@ h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text
 .datenav button:hover{transform:translateY(-2px)}
 .datenav .lbl{font-family:'Sora',sans-serif;font-weight:600;font-size:16px;text-align:center;flex:1}
 .datenav .lbl small{display:block;font-family:'Outfit';font-weight:400;font-size:12px;color:var(--muted)}
-.section{margin-bottom:22px;animation:fadeUp .4s ease both}
+.section{margin-bottom:22px}
+.anim{animation:fadeUp .4s ease both}
 .sec-head{display:flex;align-items:center;gap:10px;margin:0 2px 11px}
 .sec-icon{width:30px;height:30px;flex:none;display:grid;place-items:center;border-radius:10px}
 .sec-icon svg{width:24px;height:24px}
@@ -85,7 +86,7 @@ h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text
 .sec-head h3{font-family:'Sora',sans-serif;font-size:15px;font-weight:600;margin:0}
 .sec-head .mini{font-size:12px;color:var(--muted);margin-left:auto;font-variant-numeric:tabular-nums}
 .tilegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
-.task{display:flex;align-items:flex-start;gap:11px;background:var(--card);border:1px solid var(--line);border-radius:15px;padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .15s;position:relative;overflow:hidden;animation:fadeUp .4s ease both}
+.task{display:flex;align-items:flex-start;gap:11px;background:var(--card);border:1px solid var(--line);border-radius:15px;padding:14px;box-shadow:var(--shadow);cursor:pointer;transition:transform .12s,box-shadow .15s;position:relative;overflow:hidden}
 .task:before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--grad);opacity:0;transition:.2s}
 .task.done:before{opacity:1}
 .task:hover{transform:translateY(-2px);box-shadow:0 8px 22px -10px rgba(40,40,90,.35)}
@@ -109,7 +110,7 @@ h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text
 .monthnav button:hover{transform:translateY(-2px)}
 .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;max-width:620px}
 .gh{text-align:center;font-size:11px;color:var(--muted);font-weight:600;padding-bottom:2px}
-.cell{min-height:92px;border:1px solid var(--line);border-radius:13px;background:var(--card);display:flex;flex-direction:column;align-items:center;padding:7px 4px 8px;cursor:pointer;box-shadow:var(--shadow);animation:fadeUp .35s ease both;transition:transform .12s}
+.cell{min-height:92px;border:1px solid var(--line);border-radius:13px;background:var(--card);display:flex;flex-direction:column;align-items:center;padding:7px 4px 8px;cursor:pointer;box-shadow:var(--shadow);transition:transform .12s}
 .cell:hover{transform:translateY(-2px)}
 .cell.blank{border:none;background:transparent;cursor:default;box-shadow:none;min-height:0}
 .cell .d{font-size:13px;font-weight:700;margin-bottom:4px}
@@ -336,8 +337,8 @@ function taskEmoji(t){
 const AUTH_ON = !!CONFIG.GOOGLE_CLIENT_ID;
 let idToken=null;
 const DEFAULT_TASKS=[
-  {id:"k1",time:"Morning",cat:"Kitchen & Food",owner:"Shikha",txt:"Buy daily grocery (online / market)",rec:{type:"daily"},status:"active"},
-  {id:"k2",time:"Morning",cat:"Kitchen & Food",owner:"Shikha",txt:"Plan bf, lunch, dinner & manage the cook",rec:{type:"daily"},status:"active"},
+  {id:"k1",time:"Day",cat:"Kitchen & Food",owner:"Shikha",txt:"Buy daily grocery (online / market)",rec:{type:"daily"},status:"active"},
+  {id:"k2",time:"Day",cat:"Kitchen & Food",owner:"Shikha",txt:"Plan bf, lunch, dinner & manage the cook",rec:{type:"daily"},status:"active"},
   {id:"k3",time:"Morning",cat:"Kitchen & Food",owner:"Both",txt:"Pack lunch (as possible for each other)",rec:{type:"daily"},status:"active"},
   {id:"k4",time:"Night",cat:"Kitchen & Food",owner:"Aravind",txt:"Clean kitchen at night & pack leftover food in fridge",rec:{type:"daily"},status:"active"},
   {id:"k5",time:"Night",cat:"Kitchen & Food",owner:"Aravind",txt:"Prepare sauf water every night",rec:{type:"daily"},status:"active"},
@@ -360,7 +361,9 @@ const DEFAULT_TASKS=[
 
 let TASKS=DEFAULT_TASKS.slice(), ticks={}, cur=new Date(), monthCursor=new Date(), filter="all", ready=false;
 let ME=localStorage.getItem('tracker:me')||null;
+let lastSnap="", animateNext=true;
 cur.setHours(0,0,0,0); monthCursor=new Date(cur);
+function snapOf(tasks,t){ const tk=Object.keys(t||{}).sort().map(k=>k+'='+t[k]).join('|'); return JSON.stringify(tasks)+'#'+tk; }
 
 /* ---- API ---- */
 async function api(method, body){
@@ -375,11 +378,19 @@ async function api(method, body){
 function setSync(ok){document.getElementById('syncBadge').classList.toggle('off',!ok);document.getElementById('syncTxt').textContent=ok?'synced':'offline';}
 async function refresh(showToast){
   if(AUTH_ON && !idToken) return; // wait for login
+  if(document.hidden && !showToast) return; // don't poll a hidden tab
   try{
     const d=await api('GET');
-    TASKS=d.tasks||TASKS; ticks=d.ticks||{};
-    setSync(true); rerender(); updateBadge();
-    if(document.getElementById('notifOverlay').classList.contains('show')) renderNotif();
+    setSync(true);
+    const newTasks=d.tasks||TASKS, newTicks=d.ticks||{};
+    const snap=snapOf(newTasks,newTicks);
+    if(snap!==lastSnap){
+      const tasksChanged = JSON.stringify(newTasks)!==JSON.stringify(TASKS);
+      lastSnap=snap; TASKS=newTasks; ticks=newTicks;
+      if(tasksChanged) rerender(); else patchActive();
+      updateBadge();
+      if(document.getElementById('notifOverlay').classList.contains('show')) renderNotif();
+    }
     if(showToast) toast('Refreshed');
   }catch(e){ setSync(false); if(showToast) toast('Could not reach database'); }
 }
@@ -416,7 +427,7 @@ function initGoogle(){
 }
 function signOut(){ if(window.google) google.accounts.id.disableAutoSelect(); idToken=null; ME=null; localStorage.removeItem('tracker:me'); showGate(); }
 let _iv=null;
-function afterAuth(){ if(!_iv) _iv=setInterval(refresh,4000); refresh(); }
+function afterAuth(){ if(!_iv) _iv=setInterval(refresh,8000); refresh(); }
 
 /* ---- identity (manual mode) ---- */
 function paintMe(){ document.querySelectorAll('.who').forEach(w=>w.classList.toggle('on',w.dataset.p===ME)); }
@@ -430,16 +441,16 @@ function sameDay(a,b){return a.toDateString()===b.toDateString();}
 function isActive(t){ return t.status!=='pending'; }
 function isPending(t){ return t.status==='pending'; }
 function scheduledFor(d){
-  const dow=d.getDay(), isFirst=d.getDate()===1;
+  const dow=d.getDay();
   return TASKS.filter(t=>{
     if(!isActive(t)) return false;
     const r=t.rec||{type:"daily"};
     if(r.type==="daily"||r.type==="adhoc") return true;
     if(r.type==="weekly") return (r.dow||[]).includes(dow);
-    if(r.type==="monthly") return isFirst;
-    return false;
+    return false; // monthly shown in its own always-on section
   });
 }
+function monthlyTasks(){ return TASKS.filter(t=>isActive(t) && (t.rec&&t.rec.type)==="monthly" && (filter==="all"||t.owner===filter||t.owner==="Both")); }
 function tasksFor(d){
   return scheduledFor(d).filter(t=> filter==="all" || t.owner===filter || t.owner==="Both");
 }
@@ -455,39 +466,76 @@ function toneColor(done,total){ if(!total) return '#cbd2e0'; const p=done/total;
 async function toggle(t,d){
   const k=keyFor(t,d), on=!ticks[k];
   if(on) ticks[k]=1; else delete ticks[k];
-  renderDaily();
+  lastSnap=snapOf(TASKS,ticks);
+  patchActive();
   try{ await api('POST',{type:'toggle',key:k,on}); setSync(true);}catch(e){ setSync(false); }
 }
 
 /* ---- daily ---- */
+let _gi=0;
+function buildTile(t,d){
+  const done=isDone(t,d);
+  const bc=t.owner==="Shikha"?"b-shikha":t.owner==="Aravind"?"b-aravind":"b-both";
+  const oname=t.owner==="Both"?"Either":t.owner;
+  const el=document.createElement("div"); el.className="task"+(done?" done":"")+(animateNext?" anim":"");
+  el.dataset.k=keyFor(t,d);
+  if(animateNext) el.style.animationDelay=(_gi++ *30)+"ms";
+  el.innerHTML=`<span class="ticon">${taskEmoji(t)}</span><div class="box">${CHECK}</div><div class="body"><div class="txt">${esc(t.txt)}</div><div class="meta"><span class="badge ${bc}">${oname}</span><span class="cat">${esc(t.cat||"")}</span></div></div>`;
+  el.onclick=()=>toggle(t,d);
+  return el;
+}
+function makeSection(iconHtml,iconCls,label,items,d){
+  const doneN=items.filter(t=>isDone(t,d)).length;
+  const se=document.createElement("div"); se.className="section"+(animateNext?" anim":"");
+  se.innerHTML=`<div class="sec-head"><span class="sec-icon ${iconCls}">${iconHtml}</span><h3>${label}</h3><span class="mini">${doneN}/${items.length}</span></div><div class="tilegrid"></div>`;
+  const g=se.querySelector(".tilegrid");
+  items.forEach(t=>g.appendChild(buildTile(t,d)));
+  return se;
+}
 function renderDaily(){
   const d=cur;
   document.getElementById("dayLbl").firstChild.textContent=sameDay(d,new Date())?"Today":DOW[d.getDay()]+", "+d.getDate()+" "+MONTHS[d.getMonth()].slice(0,3);
   document.getElementById("daySub").textContent=d.getDate()+" "+MONTHS[d.getMonth()]+" "+d.getFullYear();
-  const list=document.getElementById("taskList"); list.innerHTML="";
+  const list=document.getElementById("taskList"); list.innerHTML=""; _gi=0;
   const todays=tasksFor(d);
-  if(!todays.length){ list.innerHTML='<div class="empty">Nothing scheduled. Enjoy it.</div>'; renderHeader(); return; }
-  let gi=0;
+  const mtasks=monthlyTasks();
+  if(!todays.length && !mtasks.length){ list.innerHTML='<div class="empty">Nothing scheduled. Enjoy it.</div>'; renderHeader(); animateNext=false; return; }
   SECTIONS.forEach(sec=>{
     const items=todays.filter(t=>t.time===sec.key); if(!items.length) return;
-    const doneN=items.filter(t=>isDone(t,d)).length;
     const cls=sec.key==="Morning"?"si-morning":sec.key==="Day"?"si-day":"si-night";
-    const se=document.createElement("div"); se.className="section";
-    se.innerHTML=`<div class="sec-head"><span class="sec-icon ${cls}">${ICONS[sec.key]}</span><h3>${sec.label}</h3><span class="mini">${doneN}/${items.length}</span></div><div class="tilegrid"></div>`;
-    const g=se.querySelector(".tilegrid");
-    items.forEach(t=>{
-      const done=isDone(t,d);
-      const bc=t.owner==="Shikha"?"b-shikha":t.owner==="Aravind"?"b-aravind":"b-both";
-      const oname=t.owner==="Both"?"Either":t.owner;
-      const el=document.createElement("div"); el.className="task"+(done?" done":""); el.style.animationDelay=(gi++ *30)+"ms";
-      el.innerHTML=`<span class="ticon">${taskEmoji(t)}</span><div class="box">${CHECK}</div><div class="body"><div class="txt">${esc(t.txt)}</div><div class="meta"><span class="badge ${bc}">${oname}</span><span class="cat">${esc(t.cat||"")}</span></div></div>`;
-      el.onclick=()=>toggle(t,d);
-      g.appendChild(el);
-    });
-    list.appendChild(se);
+    list.appendChild(makeSection(ICONS[sec.key],cls,sec.label,items,d));
+  });
+  if(mtasks.length){
+    list.appendChild(makeSection('<span style="font-size:18px">🧾</span>','si-day','This month · bills',mtasks,d));
+  }
+  renderHeader(); animateNext=false;
+}
+function patchDay(){
+  document.querySelectorAll('#taskList .task').forEach(el=>{ el.classList.toggle('done', !!ticks[el.dataset.k]); });
+  document.querySelectorAll('#taskList .section').forEach(se=>{
+    const tiles=se.querySelectorAll('.task');
+    const done=[...tiles].filter(x=>x.classList.contains('done')).length;
+    const mini=se.querySelector('.mini'); if(mini) mini.textContent=done+'/'+tiles.length;
   });
   renderHeader();
 }
+function patchMonth(){
+  const r=10,c=2*Math.PI*r;
+  document.querySelectorAll('#monthGrid .cell').forEach(cell=>{
+    if(!cell.dataset.k) return;
+    const [y,m,dn]=cell.dataset.k.split('_').map(Number);
+    const d=new Date(y,m,dn);
+    const pps=cell.querySelectorAll('.pp');
+    [['Shikha',pps[0]],['Aravind',pps[1]]].forEach(([p,pp])=>{
+      if(!pp) return;
+      const st=personStats(d,p), pct=st.total?st.done/st.total:0;
+      const circ=pp.querySelectorAll('.ring circle')[1];
+      if(circ){ circ.setAttribute('stroke',toneColor(st.done,st.total)); circ.setAttribute('stroke-dashoffset', c*(1-pct)); }
+      const fr=pp.querySelector('.fr'); if(fr) fr.textContent=st.done+'/'+st.total;
+    });
+  });
+}
+function patchActive(){ if(!document.getElementById('monthView').classList.contains('hidden')) patchMonth(); else patchDay(); }
 function renderHeader(){
   const s=dayStats(cur);
   document.getElementById("tpDate").textContent=sameDay(cur,new Date())?"Today":DOW[cur.getDay()]+" "+cur.getDate()+" "+MONTHS[cur.getMonth()].slice(0,3);
@@ -512,7 +560,8 @@ function renderMonth(){
     const d=new Date(y,m,dn);
     const sS=personStats(d,'Shikha'), sA=personStats(d,'Aravind');
     const cell=document.createElement("div");
-    cell.className="cell"+(sameDay(d,today)?" today":""); cell.style.animationDelay=(dn*8)+"ms";
+    cell.className="cell"+(sameDay(d,today)?" today":"")+(animateNext?" anim":""); if(animateNext) cell.style.animationDelay=(dn*8)+"ms";
+    cell.dataset.k=y+"_"+m+"_"+dn;
     cell.innerHTML=`<div class="d">${dn}</div><div class="ppl">
       <div class="pp">${ringSvg(sS.done,sS.total)}<span class="ini" style="color:var(--shikha)">S</span><span class="fr">${sS.done}/${sS.total}</span></div>
       <div class="pp">${ringSvg(sA.done,sA.total)}<span class="ini" style="color:var(--aravind)">A</span><span class="fr">${sA.done}/${sA.total}</span></div>
@@ -520,12 +569,14 @@ function renderMonth(){
     cell.onclick=()=>{cur=new Date(d);setTab('daily');};
     grid.appendChild(cell);
   }
+  animateNext=false;
 }
 
 /* ---- nav ---- */
-function shiftDay(n){cur.setDate(cur.getDate()+n);cur.setHours(0,0,0,0);renderDaily();}
-function shiftMonth(n){monthCursor.setMonth(monthCursor.getMonth()+n);renderMonth();}
+function shiftDay(n){cur.setDate(cur.getDate()+n);cur.setHours(0,0,0,0);animateNext=true;renderDaily();}
+function shiftMonth(n){monthCursor.setMonth(monthCursor.getMonth()+n);animateNext=true;renderMonth();}
 function setTab(t){
+  animateNext=true;
   const daily=t==="daily";
   document.getElementById("dailyView").classList.toggle("hidden",!daily);
   document.getElementById("monthView").classList.toggle("hidden",daily);
@@ -533,7 +584,7 @@ function setTab(t){
   document.getElementById("tabMonth").classList.toggle("on",!daily);
   if(daily) renderDaily(); else { monthCursor=new Date(cur); renderMonth(); }
 }
-function setFilter(f){filter=f;document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",c.dataset.f===f));rerender();}
+function setFilter(f){filter=f;document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",c.dataset.f===f));animateNext=true;rerender();}
 
 /* ---- notifications / approvals ---- */
 function pendingTasks(){ return TASKS.filter(isPending); }
@@ -626,7 +677,8 @@ function boot(){
     afterAuthOpen();
   }
 }
-function afterAuthOpen(){ if(!_iv) _iv=setInterval(refresh,4000); refresh(); }
+function afterAuthOpen(){ if(!_iv) _iv=setInterval(refresh,8000); refresh(); }
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refresh(); });
 boot();
 </script>
 </body>
