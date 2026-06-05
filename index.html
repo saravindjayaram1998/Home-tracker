@@ -4,6 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Home Tracker</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#ff6b4a">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Home Tracker">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -183,6 +190,9 @@ h1 em{font-style:italic;font-weight:600;background:var(--rise);-webkit-backgroun
 .sheet-actions{display:flex;gap:10px;margin-top:18px}
 .sheet-actions .btn{flex:1;justify-content:center}
 .divider{height:1.5px;background:var(--line);margin:20px 0}
+.remind{display:flex;align-items:center;gap:12px;background:linear-gradient(120deg,#fff1e6,#ffe6d4);border:1.5px solid #ffd5bd;border-radius:18px;padding:13px 16px;margin-top:16px;box-shadow:var(--sh);flex-wrap:wrap}
+.remind span{flex:1;font-size:13.5px;font-weight:500;min-width:160px}
+.remind .btn{padding:9px 16px}
 .hidden{display:none!important}
 
 /* login gate */
@@ -260,6 +270,11 @@ h1 em{font-style:italic;font-weight:600;background:var(--rise);-webkit-backgroun
   </div>
 </header>
 
+<div id="remind" class="remind hidden">
+  <span>🔔 Want a nudge at 8am &amp; 10pm when you've got tasks left?</span>
+  <button class="btn primary" onclick="enableReminders()">Turn on reminders</button>
+</div>
+
 <div class="controls">
   <div class="tabs">
     <button id="tabDaily" class="on" onclick="setTab('daily')">Day</button>
@@ -332,10 +347,11 @@ h1 em{font-style:italic;font-weight:600;background:var(--rise);-webkit-backgroun
 const CONFIG = {
   GOOGLE_CLIENT_ID: "138170837661-g55ga88pnc01il6s5pv699nogc5h964n.apps.googleusercontent.com",
   APPROVED: {
-    "saravindjayaram1998@gmail.com":"Aravind",
-    "agarwalshikha908@gmail.com":"Shikha",
-    "mailaravindjayaram@gmail.com":"Aravind"
-  }
+    "saravindjayaram1998@gmail.com": "Aravind",
+    "mailaravindjayaram@gmail.com": "Aravind",
+    "agarwalshikha908@gmail.com": "Shikha"
+  },
+  PUSH_PUBLIC_KEY: "BNGB0rufkjIq1xI2diLowKkkexRDK-JrTDSiW81bHmdkLxNcTRBDtYLxdrwmL95lfy2s7M2LTIInGOx0cI_q3f8"
 };
 /* ============================================================================================ */
 
@@ -639,9 +655,37 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 let toastT;
 function toast(msg){const t=document.getElementById("toast");t.innerHTML='<svg viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></svg>'+esc(msg);t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),1900);}
 
+/* ---- PWA + push reminders ---- */
+function registerSW(){ if('serviceWorker' in navigator){ navigator.serviceWorker.register('/sw.js').catch(()=>{}); } }
+function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true; }
+function pushSupported(){ return ('serviceWorker' in navigator) && ('PushManager' in window) && !!CONFIG.PUSH_PUBLIC_KEY; }
+function urlB64(s){ const pad='='.repeat((4-s.length%4)%4); const b=(s+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(b); const a=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++)a[i]=raw.charCodeAt(i); return a; }
+function maybeShowReminder(){
+  if(!pushSupported()) return;
+  if(typeof Notification!=='undefined' && Notification.permission==='granted') return;
+  document.getElementById('remind').classList.remove('hidden');
+}
+async function enableReminders(){
+  if(!ME){ toast('Sign in / pick who you are first'); return; }
+  if(!pushSupported()){ toast('Reminders not supported here'); return; }
+  if(isIOS() && !isStandalone()){ toast('On iPhone: tap Share → Add to Home Screen, open it from there, then turn on reminders'); return; }
+  try{
+    const perm=await Notification.requestPermission();
+    if(perm!=='granted'){ toast('Reminders not enabled'); return; }
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true, applicationServerKey:urlB64(CONFIG.PUSH_PUBLIC_KEY)});
+    await api('POST',{type:'subscribe', sub: sub.toJSON?sub.toJSON():sub, person: ME});
+    document.getElementById('remind').classList.add('hidden');
+    toast('Reminders on for '+ME);
+  }catch(e){ toast('Could not enable reminders'); }
+}
+
 /* ---- boot ---- */
 function afterAuthOpen(){ if(!_iv) _iv=setInterval(refresh,8000); refresh(); }
 function boot(){
+  registerSW();
   animateNext=true; setTab('daily');
   if(AUTH_ON){
     document.getElementById('idrow').classList.add('hidden');
@@ -656,6 +700,7 @@ function boot(){
     document.getElementById('whoami').classList.add('hidden');
     paintMe(); updateBadge(); afterAuthOpen();
   }
+  maybeShowReminder();
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) refresh(); });
 boot();
