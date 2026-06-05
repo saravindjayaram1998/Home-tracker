@@ -77,6 +77,15 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true });
       }
 
+      if (body.type === 'subscribe' && body.sub && body.sub.endpoint) {
+        await redis.hset('tracker:subs', { [body.sub.endpoint]: JSON.stringify({ person: body.person || '', sub: body.sub }) });
+        return res.status(200).json({ ok: true });
+      }
+      if (body.type === 'unsubscribe' && body.endpoint) {
+        await redis.hdel('tracker:subs', body.endpoint);
+        return res.status(200).json({ ok: true });
+      }
+
       if (['addTask', 'removeTask', 'approve'].includes(body.type)) {
         let tasks = (await redis.get(TASKS_KEY)) || [];
         if (body.type === 'addTask' && body.task) tasks.push(body.task);
